@@ -1,67 +1,95 @@
+# objective is to get the cart to the flag.
+# for now, let's just move randomly:
+
 import gym
 import numpy as np
-import pandas as pd
-import random
+import matplotlib.pyplot as plt
 
-env = gym.make('MountainCar-v0')
+env = gym.make("MountainCar-v0")
 
-# n_bins -> En valores queremos discretizar los valores continuos
-# observation_space.n -> tamaño de cada observacion
-# action_space -> número de acciones distintas
-# creamos una Q-tabla de tamaño [b_bins**observation_space,action_space]
-# [4**2,3] -> [16,3]
+LEARNING_RATE = 0.1
+evolucion = []
+DISCOUNT = 0.95
+EPISODES = 10000
+SHOW_EVERY = 200
 
-n_bins = 20
-Q = np.zeros([n_bins**2,env.action_space.n])
+DISCRETE_OS_SIZE = [20, 20]
+discrete_os_win_size = (env.observation_space.high - env.observation_space.low)/DISCRETE_OS_SIZE
 
-position_bins = pd.cut([-1.2,0.6], bins=n_bins, retbins=True)[1][1:-1]
-speed_bins = pd.cut([-0.07,0.07], bins=n_bins, retbins=True)[1][1:-1]
+# Exploration settings
+epsilon = 1  # not a constant, qoing to be decayed
+START_EPSILON_DECAYING = 1
+END_EPSILON_DECAYING = EPISODES//4
+epsilon_decay_value = epsilon/(END_EPSILON_DECAYING - START_EPSILON_DECAYING)
 
-def toDiscrete(observation):
-    pos_obs, speed_obs = observation
-    pos = np.digitize(x=[pos_obs], bins=position_bins)[0]
-    speed = np.digitize(x=[speed_obs], bins=speed_bins)[0]
-    return getIndex(pos,speed)
 
-def concatInfo(p,s,a,r):
-    return (str(p)+str(s)+str(a)+str(r))
+q_table = np.random.uniform(low=-2, high=0, size=(DISCRETE_OS_SIZE + [env.action_space.n]))
 
-def getIndex(n1,n0):
-    # se le pasan las 4 observaciones, y se calcula la posicion en la Q-tabla
-    return (env.action_space.n)*n1+n0
 
-def transformarReward(p):
-    rt = 0
-    if p<0:
-        rt = p
-    else:
-        rt = p*100
+def get_discrete_state(state):
+    discrete_state = (state - env.observation_space.low)/discrete_os_win_size
+    return tuple(discrete_state.astype(np.int))  # we use this tuple to look up the 3 Q values for the available actions in the q-table
 
-    return rt
 
-episodios = 1000
-cambiar = 0.2
-alpha = 0.9
-for i in range(episodios):
-
-    observation = env.reset()
+for episode in range(EPISODES):
+    discrete_state = get_discrete_state(env.reset())
     done = False
+    R = 0
+    if episode % SHOW_EVERY == 0:
+        print("Episodio = ",episode)
+        #render = True
+    else:
+        render = False
+
     while not done:
-        r = random.random()
-        #if i > (episodios -100):
-        env.render()
-        state = toDiscrete(observation)
-        pos, speed = observation
-        if r < cambiar:
-            action = random.randint(0,2)
+
+        if np.random.random() > epsilon:
+            # Get action from Q table
+            action = np.argmax(q_table[discrete_state])
         else:
-            action = np.argmax(Q[state])
-        observation, reward, done, info = env.step(action)
-        reward = reward+transformarReward(pos)
-        state2 = toDiscrete(observation)
-        Q_valor = Q[state, action] + alpha * (reward + np.max(Q[state2]) - Q[state, action])
-        Q[state, action] = Q_valor
-        state = state2
+            # Get random action
+            action = np.random.randint(0, env.action_space.n)
 
 
-print(Q)
+        new_state, reward, done, _ = env.step(action)
+
+        R += reward
+        new_discrete_state = get_discrete_state(new_state)
+
+        #if episode % SHOW_EVERY == 0:
+         #   env.render()
+        #new_q = (1 - LEARNING_RATE) * current_q + LEARNING_RATE * (reward + DISCOUNT * max_future_q)
+
+        # If simulation did not end yet after last step - update Q table
+        if not done:
+
+            # Maximum possible Q value in next step (for new state)
+            max_future_q = np.max(q_table[new_discrete_state])
+
+            # Current Q value (for current state and performed action)
+            current_q = q_table[discrete_state + (action,)]
+
+            # And here's our equation for a new Q value for current state and action
+            new_q = (1 - LEARNING_RATE) * current_q + LEARNING_RATE * (reward + DISCOUNT * max_future_q)
+
+            # Update Q table with new Q value
+            q_table[discrete_state + (action,)] = new_q
+
+
+        # Simulation ended (for any reson) - if goal position is achived - update Q value with reward directly
+        elif new_state[0] >= env.goal_position:
+            #q_table[discrete_state + (action,)] = reward
+            q_table[discrete_state + (action,)] = 0
+
+        discrete_state = new_discrete_state
+
+    evolucion.append(R)
+    # Decaying is being done every episode if episode number is within decaying range
+    if END_EPSILON_DECAYING >= episode >= START_EPSILON_DECAYING:
+        epsilon -= epsilon_decay_value
+
+
+env.close()
+
+plt.plot(evolucion)
+plt.show()

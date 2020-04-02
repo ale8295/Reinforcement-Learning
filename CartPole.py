@@ -2,9 +2,14 @@ import numpy as np
 import pandas as pd
 import gym
 
+EPISODES = 1000
+epsilon = 1  # not a constant, qoing to be decayed
+START_EPSILON_DECAYING = 1
+END_EPSILON_DECAYING = EPISODES//2
+epsilon_decay_value = epsilon/(END_EPSILON_DECAYING - START_EPSILON_DECAYING)
 
 n_bins = 4
-Q = np.zeros([n_bins**4,2])
+Q = np.random.uniform(low= 0,high = 10,size = [n_bins**4,2])
 cart_position_bins = pd.cut([-4.8, 4.8], bins=n_bins, retbins=True)[1][1:-1]
 cart_velocity_bins = pd.cut([-1, 1], bins=n_bins, retbins=True)[1][1:-1]
 pole_angle_bins = pd.cut([-2, 2], bins=n_bins, retbins=True)[1][1:-1]
